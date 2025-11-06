@@ -3,7 +3,7 @@ services:
     name: rosati-render-backend
     env: node
     region: ohio        # or oregon — pick the closest to your reps
-    plan: starter       # starter plan avoids sleep; free is OK for testing
+    plan: free       # starter plan avoids sleep; free is OK for testing
     buildCommand: "npm install"
     startCommand: "npm start"
     healthCheckPath: "/health"
