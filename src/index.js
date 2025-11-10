@@ -6,6 +6,7 @@ import { OpenAI } from "openai";
 import { logger } from "./logger.js";
 import { requireBearer } from "./auth.js";
 import { tidySchema, renderSchema } from "./validators.js";
+import { toFile} from "openai/uploads";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 }});
@@ -54,20 +55,23 @@ app.post("/render", requireBearer, upload.single("image"), async (req, res) => {
 
     // IMPORTANT: Some SDKs accept 'image[]' in multipart. With the official SDK:
     // Use 'images.generate' with model 'gpt-image-1' and pass the input image as a "reference".
-    const imgBytes = req.file.buffer;
+   
+  // Convert the in-memory JPEG buffer to a File for the SDK - this is the edited block I added
+const file = await toFile(req.file.buffer, "photo.jpg");
 
-    const out = await client.images.generate({
-      model: "gpt-image-1",
-      prompt,
-      // Many runtimes accept an array like this for reference inputs:
-      image: [{ bytes: imgBytes }],
-      n: Number(n),
-      size
-    });
+// Use EDITS (not generate) so the model edits the provided image
+const out = await client.images.edits({
+  model: "gpt-image-1",
+  image: file,          // <— attach the photo
+  prompt,               // your cleaned/specific instruction
+  n: Number(n),
+  size
+});
 
-    // Return base64s for the MVP (you can upload to S3 and return URLs instead)
-    const images = out.data.map(d => d.b64_json);
-    res.json({ images });
+// Return base64s (same as before)
+const images = out.data.map(d => d.b64_json);
+res.json({ images });
+
   } catch (err) {
     logger.error({ err }, "render_failed");
     res.status(400).json({ error: err.message });
