@@ -1,15 +1,23 @@
+// src/index.js
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { OpenAI } from "openai";
+import { toFile } from "openai/uploads";
+
 import { logger } from "./logger.js";
 import { requireBearer } from "./auth.js";
 import { tidySchema, renderSchema } from "./validators.js";
-import { toFile } from "openai/uploads";
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 }});
+
+// Increase if you want to allow larger photos later (e.g., 25 MB)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }
+});
+
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(cors());
@@ -18,7 +26,7 @@ app.use(express.json());
 // Health
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-// Optional: rewrite/normalize the rep's free text into a strict instruction
+// Prompt normalizer (optional)
 app.post("/tidy", requireBearer, async (req, res) => {
   try {
     const { prompt } = tidySchema.parse(req.body);
@@ -32,7 +40,7 @@ app.post("/tidy", requireBearer, async (req, res) => {
     ].join(" ");
 
     const rsp = await client.responses.create({
-      model: "gpt-4.1-mini", // pick your preferred text model
+      model: "gpt-4.1-mini",
       input: [
         { role: "system", content: system },
         { role: "user", content: prompt }
@@ -50,29 +58,37 @@ app.post("/tidy", requireBearer, async (req, res) => {
 // Natural-language image edit with the original photo as reference (no mask)
 app.post("/render", requireBearer, upload.single("image"), async (req, res) => {
   try {
+    // Multer attaches text fields to req.body and the file to req.file
     const { prompt, n = "2", size = "1536x1536" } = renderSchema.parse(req.body);
     if (!req.file) return res.status(400).json({ error: "image file required" });
 
-    // IMPORTANT: Some SDKs accept 'image[]' in multipart. With the official SDK:
-    // Use 'images.generate' with model 'gpt-image-1' and pass the input image as a "reference".
-   
-  // Convert the in-memory JPEG buffer to a File for the SDK - this is the edited block I added
-const contentType = (req.file && req.file.mimetype) ? req.file.mimetype : "image/jpeg";    
-const file = await toFile(req.file.buffer, "photo.jpg"), { type: contentType });
+    // Helpful debug (shows up in Render logs)
+    logger.info({
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      prompt,
+      n,
+      sizeParam: size
+    }, "incoming_upload");
 
-// Use EDITS (not generate) so the model edits the provided image
-const out = await client.images.edit({
-  model: "gpt-image-1",
-  image: file,          // <— attach the photo
-  prompt,               // your cleaned/specific instruction
-  n: Number(n),
-  size
-});
+    // Create a File with the correct MIME type for the SDK
+    const file = await toFile(
+      req.file.buffer,
+      "photo.jpg",
+      { type: req.file?.mimetype || "image/jpeg" }
+    );
 
-// Return base64s (same as before)
-const images = out.data.map(d => d.b64_json);
-res.json({ images });
+    // Use the EDIT endpoint (singular)
+    const out = await client.images.edit({
+      model: "gpt-image-1",
+      image: file,
+      prompt,
+      n: Number(n),
+      size
+    });
 
+    const images = out.data.map(d => d.b64_json);
+    res.json({ images });
   } catch (err) {
     logger.error({ err }, "render_failed");
     res.status(400).json({ error: err.message });
