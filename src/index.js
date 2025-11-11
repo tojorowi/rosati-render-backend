@@ -6,7 +6,7 @@ import { OpenAI } from "openai";
 import { logger } from "./logger.js";
 import { requireBearer } from "./auth.js";
 import { tidySchema, renderSchema } from "./validators.js";
-import { toFile} from "openai/uploads";
+import { toFile } from "openai/uploads";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 }});
@@ -57,7 +57,8 @@ app.post("/render", requireBearer, upload.single("image"), async (req, res) => {
     // Use 'images.generate' with model 'gpt-image-1' and pass the input image as a "reference".
    
   // Convert the in-memory JPEG buffer to a File for the SDK - this is the edited block I added
-const file = await toFile(req.file.buffer, "photo.jpg");
+const contentType = (req.file && req.file.mimetype) ? req.file.mimetype : "image/jpeg";    
+const file = await toFile(req.file.buffer, "photo.jpg"), { type: contentType });
 
 // Use EDITS (not generate) so the model edits the provided image
 const out = await client.images.edit({
