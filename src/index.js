@@ -60,7 +60,7 @@ app.post("/render", requireBearer, upload.single("image"), async (req, res) => {
 const file = await toFile(req.file.buffer, "photo.jpg");
 
 // Use EDITS (not generate) so the model edits the provided image
-const out = await client.images.edits({
+const out = await client.images.edit({
   model: "gpt-image-1",
   image: file,          // <— attach the photo
   prompt,               // your cleaned/specific instruction
